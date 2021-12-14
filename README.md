@@ -73,12 +73,24 @@ following changes were necessary to make it work:
 		backtest_plot(account_value=df_account_value, baseline_ticker = 'AAPL', baseline_start = '2019-01-01', baseline_end = '2021-01-01')
 
 
-NOTE:  For first observations I had noticed that after running the TD3 model the account starting and ending values did not change which meant that no trading was 
-taking place during training.  Another run was made and it ending values changed as they should.  I don't know if this is a fluc or if it was by code design.
+QUESTIONS FOR THE AUDIENCE...
+
+1.  PyPlot is using 2 figures independently.  I'm looking for improvements on how to show figures as one file?  I'm not sure if my solution is sufficient.
+
+2.  The TD3 algorithm is generating results that make the output remarkably close to the benchnark.  Is this correct?
+
 
 
 Source:  
 
-Maithani, M.  2021, May 1.  How To Automate The Stock Market Using FinRL (Deep Reinforcement Learning Library)?
+Maithani, M.  (2021, May 1).  How To Automate The Stock Market Using FinRL (Deep Reinforcement Learning Library)?
   https://analyticsindiamag.com/stock-market-prediction-using-finrl/
+
+Liu, X.  Yang, H.  Chen, Q.  Zhang, Q.  Yang, L.  Xiao, B.  Wang, C.  (2020, Nov 19).  FinRL: A Deep Reinforcement Learning Library for Automated Stock Trading in Quantitative Finance.  https://arxiv.org/abs/2011.09607
+
+
+
+
+
+
 
