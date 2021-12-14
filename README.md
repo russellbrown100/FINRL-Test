@@ -63,7 +63,7 @@ following changes were necessary to make it work:
 
 7.  And the following to read the account value from a file:
 
-# backtest plot - from file
+		# backtest plot - from file
 
 		import pandas as pd
 		import matplotlib.pyplot as plt
