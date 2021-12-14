@@ -43,23 +43,23 @@ following changes were necessary to make it work:
 
 
 
-    from matplotlib.backends.backend_pdf import PdfPages
+	    from matplotlib.backends.backend_pdf import PdfPages
 
-    def save_results(filename):
-       pp = PdfPages(filename)
-       fig_nums = plt.get_fignums()
-       figs = [plt.figure(n) for n in fig_nums]
-       for fig in figs:
-          fig.savefig(pp, format='pdf')
-       pp.close()
+	    def save_results(filename):
+	       pp = PdfPages(filename)
+	       fig_nums = plt.get_fignums()
+	       figs = [plt.figure(n) for n in fig_nums]
+	       for fig in figs:
+		  fig.savefig(pp, format='pdf')
+	       pp.close()
 
 
-    filename = "results.pdf"
-    save_results(filename)
+	    filename = "results.pdf"
+	    save_results(filename)
     
 6.  I'm also using the following code to save the account value to a file:
 
-    df_account_value.to_csv('account_value.csv')
+	    df_account_value.to_csv('account_value.csv')
 
 7.  And the following to read the account value from a file:
 
