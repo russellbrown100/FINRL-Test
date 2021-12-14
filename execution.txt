@@ -1,0 +1,315 @@
+Microsoft Windows [Version 10.0.19043.1348]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\Russell Brown>python
+Python 3.9.2 (tags/v3.9.2:1a79785, Feb 19 2021, 13:44:55) [MSC v.1928 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+>>> import pandas as pd
+>>> import matplotlib.pyplot as plt
+>>> import numpy as np
+>>> import matplotlib
+>>> matplotlib.use('Agg')
+>>> import datetime
+>>> import os
+>>> from finrl.config import config
+>>> from finrl.marketdata.yahoodownloader import YahooDownloader
+>>> from finrl.preprocessing.preprocessors import FeatureEngineer
+>>> from finrl.preprocessing.data import data_split
+>>> from finrl.env.env_stocktrading import StockTradingEnv
+>>> from finrl.model.models import DRLAgent
+>>> from finrl.trade.backtest import backtest_stats, backtest_plot, get_daily_return, get_baseline
+C:\Python\lib\site-packages\pyfolio\pos.py:26: UserWarning: Module "zipline.assets" not found; multipliers will not be applied to position notionals.
+  warnings.warn(
+>>>
+>>>
+>>>
+>>> #create folders
+>>>
+>>> if not os.path.exists("./" + config.DATA_SAVE_DIR): os.makedirs("./" + config.DATA_SAVE_DIR)
+...
+>>> if not os.path.exists("./" + config.TRAINED_MODEL_DIR): os.makedirs("./" + config.TRAINED_MODEL_DIR)
+...
+>>> if not os.path.exists("./" + config.TENSORBOARD_LOG_DIR): os.makedirs("./" + config.TENSORBOARD_LOG_DIR)
+...
+>>> if not os.path.exists("./" + config.RESULTS_DIR): os.makedirs("./" + config.RESULTS_DIR)
+...
+>>>
+>>>
+>>> #download data
+>>>
+>>>
+>>> data_df = YahooDownloader(start_date = '2009-01-01',
+...                           end_date = '2021-01-01',
+...                           ticker_list = ['AAPL']).fetch_data()
+[*********************100%***********************]  1 of 1 completed
+C:\Python\lib\site-packages\finrl\marketdata\yahoodownloader.py:69: FutureWarning: In a future version of pandas all arguments of DataFrame.drop except for the argument 'labels' will be keyword-only
+  data_df = data_df.drop("adjcp", 1)
+Shape of DataFrame:  (3021, 8)
+>>> data_df.head()
+         date      open      high       low     close      volume   tic  day
+0  2009-01-02  3.067143  3.251429  3.041429  2.778781   746015200  AAPL    4
+1  2009-01-05  3.327500  3.435000  3.311071  2.896057  1181608400  AAPL    0
+2  2009-01-06  3.426786  3.470357  3.299643  2.848289  1289310400  AAPL    1
+3  2009-01-07  3.278929  3.303571  3.223571  2.786743   753048800  AAPL    2
+4  2009-01-08  3.229643  3.326786  3.215714  2.838492   673500800  AAPL    3
+>>>
+>>> #add technical indicators
+>>>
+>>> tech_indicator_list=config.TECHNICAL_INDICATORS_LIST
+>>> tech_indicator_list=tech_indicator_list+['kdjk','open_2_sma','boll','close_10.0_le_5_c','wr_10','dma','trix']
+>>> print(tech_indicator_list)
+['macd', 'boll_ub', 'boll_lb', 'rsi_30', 'cci_30', 'dx_30', 'close_30_sma', 'close_60_sma', 'kdjk', 'open_2_sma', 'boll', 'close_10.0_le_5_c', 'wr_10', 'dma', 'trix']
+>>>
+>>> fe = FeatureEngineer(
+...                     use_technical_indicator=True,
+...                     tech_indicator_list = tech_indicator_list,
+...                     use_turbulence=False,
+...                     user_defined_feature = False)
+>>>
+>>> data_df = fe.preprocess_data(data_df)
+Successfully added technical indicators
+>>> data_df.head()
+         date      open      high       low     close  ...      boll close_10.0_le_5_c       wr_10  dma      trix
+0  2009-01-02  3.067143  3.251429  3.041429  2.778781  ...  2.778781               1.0  225.070277  0.0  0.670731
+1  2009-01-05  3.327500  3.435000  3.311071  2.896057  ...  2.837419               2.0  136.936773  0.0  0.670731
+2  2009-01-06  3.426786  3.470357  3.299643  2.848289  ...  2.841042               3.0  145.028554  0.0  0.391301
+3  2009-01-07  3.278929  3.303571  3.223571  2.786743  ...  2.827468               4.0  159.377373  0.0  0.195390
+4  2009-01-08  3.229643  3.326786  3.215714  2.838492  ...  2.829672               5.0  147.312643  0.0  0.125124
+
+[5 rows x 23 columns]
+>>>
+>>>
+>>> #build environment
+>>>
+>>>
+>>> train = data_split(data_df, start = '2009-01-01', end = '2019-01-01')
+>>> trade = data_split(data_df, start = '2019-01-01', end = '2021-01-01')
+>>> stock_dimension = len(train.tic.unique())
+>>> state_space = 1 + 2*stock_dimension + len(config.TECHNICAL_INDICATORS_LIST)*stock_dimension
+>>> print(f"Stock data Dimensions: {stock_dimension}, State Spaces: {state_space}")
+Stock data Dimensions: 1, State Spaces: 11
+>>>
+>>>
+>>>
+>>> #initiate environment
+>>>
+>>> env_kwargs = {
+...     "hmax": 100,
+...     "initial_amount": 100000,
+...     "buy_cost_pct": 0.001,
+...     "sell_cost_pct": 0.001,
+...     "state_space": state_space,
+...     "stock_dim": stock_dimension,
+...     "tech_indicator_list": config.TECHNICAL_INDICATORS_LIST,
+...     "action_space": stock_dimension,
+...     "reward_scaling": 1e-4}
+>>> e_train_gym = StockTradingEnv(df = train, **env_kwargs)
+>>> env_train, _ = e_train_gym.get_sb_env()
+>>>
+>>>
+>>> # 4. Model: TD3
+>>>
+>>> agent = DRLAgent(env = env_train)
+>>> TD3_PARAMS = {"batch_size": 128,
+...               "buffer_size": 1000000,
+...               "learning_rate": 0.00003}
+>>>
+>>> model_td3 = agent.get_model("td3",model_kwargs = TD3_PARAMS)
+{'batch_size': 128, 'buffer_size': 1000000, 'learning_rate': 3e-05}
+Using cpu device
+>>> trained_td3 = agent.train_model(model=model_td3,
+...                              tb_log_name='td3',
+...                              total_timesteps=60000)
+2021-12-13 19:59:10.457713: W tensorflow/stream_executor/platform/default/dso_loader.cc:64] Could not load dynamic library 'cudart64_110.dll'; dlerror: cudart64_110.dll not found
+2021-12-13 19:59:10.457872: I tensorflow/stream_executor/cuda/cudart_stub.cc:29] Ignore above cudart dlerror if you do not have a GPU set up on your machine.
+Logging to tensorboard_log/td3\td3_4
+---------------------------------
+| time/              |          |
+|    episodes        | 4        |
+|    fps             | 72       |
+|    time_elapsed    | 138      |
+|    total_timesteps | 10064    |
+| train/             |          |
+|    actor_loss      | 511      |
+|    critic_loss     | 414      |
+|    learning_rate   | 3e-05    |
+|    n_updates       | 7548     |
+---------------------------------
+---------------------------------
+| time/              |          |
+|    episodes        | 8        |
+|    fps             | 64       |
+|    time_elapsed    | 309      |
+|    total_timesteps | 20128    |
+| train/             |          |
+|    actor_loss      | 492      |
+|    critic_loss     | 263      |
+|    learning_rate   | 3e-05    |
+|    n_updates       | 17612    |
+---------------------------------
+day: 2515, episode: 10
+begin_total_asset: 100000.00
+end_total_asset: 858681.67
+total_reward: 758681.67
+total_cost: 99.90
+total_trades: 2515
+Sharpe: 0.989
+=================================
+---------------------------------
+| time/              |          |
+|    episodes        | 12       |
+|    fps             | 46       |
+|    time_elapsed    | 656      |
+|    total_timesteps | 30192    |
+| train/             |          |
+|    actor_loss      | 405      |
+|    critic_loss     | 221      |
+|    learning_rate   | 3e-05    |
+|    n_updates       | 27676    |
+---------------------------------
+---------------------------------
+| time/              |          |
+|    episodes        | 16       |
+|    fps             | 49       |
+|    time_elapsed    | 807      |
+|    total_timesteps | 40256    |
+| train/             |          |
+|    actor_loss      | 325      |
+|    critic_loss     | 190      |
+|    learning_rate   | 3e-05    |
+|    n_updates       | 37740    |
+---------------------------------
+day: 2515, episode: 20
+begin_total_asset: 100000.00
+end_total_asset: 858681.67
+total_reward: 758681.67
+total_cost: 99.90
+total_trades: 2515
+Sharpe: 0.989
+=================================
+---------------------------------
+| time/              |          |
+|    episodes        | 20       |
+|    fps             | 50       |
+|    time_elapsed    | 987      |
+|    total_timesteps | 50320    |
+| train/             |          |
+|    actor_loss      | 259      |
+|    critic_loss     | 142      |
+|    learning_rate   | 3e-05    |
+|    n_updates       | 47804    |
+---------------------------------
+---------------------------------
+| time/              |          |
+|    episodes        | 24       |
+|    fps             | 52       |
+|    time_elapsed    | 1159     |
+|    total_timesteps | 60384    |
+| train/             |          |
+|    actor_loss      | 206      |
+|    critic_loss     | 91.6     |
+|    learning_rate   | 3e-05    |
+|    n_updates       | 57868    |
+---------------------------------
+>>>
+>>>
+>>> # trading
+>>>
+>>>
+>>> trade = data_split(data_df, start = '2019-01-01', end = '2021-01-01')
+>>> e_trade_gym = StockTradingEnv(df = trade, **env_kwargs)
+>>> env_trade, obs_trade = e_trade_gym.get_sb_env()
+>>>
+>>> trade.head()
+         date       open       high        low      close  ...       boll close_10.0_le_5_c       wr_10       dma      trix
+0  2019-01-02  38.722500  39.712502  38.557499  38.326294  ...  39.789497               0.0   67.931334 -6.843822 -0.761652
+1  2019-01-03  35.994999  36.430000  35.500000  34.508709  ...  39.272194               0.0  115.580215 -7.052746 -0.763466
+2  2019-01-04  36.132500  37.137501  35.950001  35.981861  ...  38.927204               0.0   90.415493 -7.011621 -0.766086
+3  2019-01-07  37.174999  37.207500  36.474998  35.901775  ...  38.602115               0.0   90.742504 -6.868307 -0.767321
+4  2019-01-08  37.389999  37.955002  37.130001  36.586170  ...  38.386844               0.0   74.973038 -6.559153 -0.759067
+
+[5 rows x 23 columns]
+>>>
+>>>
+>>> df_account_value, df_actions = DRLAgent.DRL_prediction(model=trained_td3, environment = e_trade_gym)
+hit end!
+>>>
+>>>
+>>> df_account_value.to_csv('account_value.csv')
+>>> df_account_value.to_csv('account_value')
+>>> df_account_value.to_csv('account_value.csv')
+>>>
+>>> # backtesting performance
+>>>
+>>>
+>>> print("==============Results===========")
+==============Results===========
+>>> now = datetime.datetime.now().strftime('%Y%m%d-%Hh%M')
+>>>
+>>> perf_stats_all = backtest_stats(account_value=df_account_value)
+Annual return          0.853774
+Cumulative returns     2.444904
+Annual volatility      0.366730
+Sharpe ratio           1.871632
+Calmar ratio           2.717020
+Stability              0.938186
+Max drawdown          -0.314232
+Omega ratio            1.425043
+Sortino ratio          2.832496
+Skew                        NaN
+Kurtosis                    NaN
+Tail ratio             1.101084
+Daily value at risk   -0.043480
+dtype: float64
+>>> perf_stats_all = pd.DataFrame(perf_stats_all)
+>>>
+>>> from matplotlib.backends.backend_pdf import PdfPages
+>>>
+>>> def save_results(filename):
+...    pp = PdfPages(filename)
+...    fig_nums = plt.get_fignums()
+...    figs = [plt.figure(n) for n in fig_nums]
+...    for fig in figs:
+...       fig.savefig(pp, format='pdf')
+...    pp.close()
+...
+>>>
+>>> filename = "results.pdf"
+>>> save_results(filename)
+>>>
+>>> plt.close('all')
+>>>
+>>>
+>>>
+>>> backtest_plot(account_value=df_account_value, baseline_ticker = 'AAPL', baseline_start = '2019-01-01', baseline_end = '2021-01-01')
+[*********************100%***********************]  1 of 1 completed
+C:\Python\lib\site-packages\finrl\marketdata\yahoodownloader.py:69: FutureWarning: In a future version of pandas all arguments of DataFrame.drop except for the argument 'labels' will be keyword-only
+  data_df = data_df.drop("adjcp", 1)
+Shape of DataFrame:  (505, 8)
+<IPython.core.display.HTML object>
+<IPython.core.display.HTML object>
+<IPython.core.display.HTML object>
+>>>
+>>> from matplotlib.backends.backend_pdf import PdfPages
+>>>
+>>> def save_results(filename):
+...    pp = PdfPages(filename)
+...    fig_nums = plt.get_fignums()
+...    figs = [plt.figure(n) for n in fig_nums]
+...    for fig in figs:
+...       fig.savefig(pp, format='pdf')
+...    pp.close()
+...
+>>>
+>>> filename = "results.pdf"
+>>> save_results(filename)
+>>> python --version
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name 'python' is not defined
+>>> --version
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+NameError: name 'version' is not defined
+>>>
